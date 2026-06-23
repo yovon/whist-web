@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using the metadata below, and also
+  cite the underlying white-dwarf model papers listed in the README (Credits).
+title: "WHIST — White-dwarf HR-diagram Interactive Simulation Tool"
+abstract: >-
+  An interactive, in-browser (Pyodide) white-dwarf population simulator that
+  renders a simulated Gaia colour-magnitude (HR) diagram from adjustable model
+  parameters, overlaid on the observed 120 pc Gaia white-dwarf sample.
+type: software
+authors:
+  - family-names: Ziv
+    given-names: Yoav
+license: MIT
+url: "https://github.com/yovon/whist-web"
+repository-code: "https://github.com/yovon/whist-web"
+keywords:
+  - white dwarfs
+  - astronomy
+  - astrophysics
+  - Gaia
+  - population synthesis
+  - Pyodide

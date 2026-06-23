@@ -22,13 +22,16 @@ page loads, all computation happens on your machine.
 - Interactive plot overlay: box/wheel zoom, pan, home, and polygon selection that
   drives the distribution panel.
 
+## Try it
+
+A live version is hosted with GitHub Pages: **<https://yovon.github.io/whist-web/>**
+
 ## Run it locally
 
 Pyodide must fetch the simulation bundle over `http://` (browsers block `file://`),
-so serve the `web/` folder rather than double-clicking the HTML.
+so serve the repo root rather than double-clicking the HTML.
 
 ```bash
-cd web
 python serve.py            # or: python -m http.server 8000
 ```
 
@@ -41,11 +44,10 @@ change recomputes a frame in a fraction of a second.
 ## Repository layout
 
 ```
-WHIST-Webapp/
-  web/
-    index.html            the app (Pyodide + UI + plotting)
-    serve.py              tiny static server for local use
-    whist_bundle.zip      sim_core + model grids + Gaia overlay, zipped for the browser
+whist-web/
+  index.html              the app (Pyodide + UI + plotting)
+  serve.py                tiny static server for local use
+  whist_bundle.zip        sim_core + model grids + Gaia overlay, zipped for the browser
   whist_pkg/              the self-contained simulation package (see whist_pkg/README.md)
     sim_core/             the compute modules
     White Dwarf Models/   vendored cooling/atmosphere model grids (see Credits)
@@ -60,6 +62,29 @@ To verify the compute core outside the browser:
 python -m venv .venv-web
 .venv-web/Scripts/python -m pip install numpy scipy pandas astropy matplotlib
 .venv-web/Scripts/python whist_pkg/run_sim.py
+```
+
+## Citing this tool
+
+If you use WHIST in a publication, presentation, or derivative work, please cite
+both **this software** and the **underlying white-dwarf model papers** listed under
+Credits below (the science is theirs).
+
+GitHub shows a "Cite this repository" button generated from
+[`CITATION.cff`](CITATION.cff). A suggested software citation:
+
+> Ziv, Y. (2026). *WHIST — White-dwarf HR-diagram Interactive Simulation Tool* [software].
+> https://github.com/yovon/whist-web
+
+BibTeX:
+
+```bibtex
+@software{whist_web,
+  author  = {Ziv, Yoav},
+  title   = {{WHIST} -- White-dwarf {HR}-diagram Interactive Simulation Tool},
+  year    = {2026},
+  url      = {https://github.com/yovon/whist-web}
+}
 ```
 
 ## Credits — White Dwarf Models
