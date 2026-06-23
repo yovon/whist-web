@@ -1,0 +1,12 @@
+# KEEP dependencies for the browser-bound sim package.
+# All of these have Pyodide/WASM builds. Versions are left unpinned here; pin
+# to whatever Pyodide ships once the build target is fixed.
+#
+# CUT from this package (do NOT add back — they signal non-sim code is leaking):
+#   PySide6/PyQt, emcee, corner, tqdm, imageio, Pillow, astroquery, requests
+numpy
+scipy
+pandas
+astropy
+matplotlib
+scikit-image   # not used by the compute core; needed later for the HR vesselness/contour render

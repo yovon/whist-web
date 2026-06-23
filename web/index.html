@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>White Dwarf Population Simulator</title>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<style>
+  :root {
+    --bg:#1a1a1a; --panel:#222; --panel2:#1e1e1e; --section:#2d2d2d;
+    --fg:#e0e0e0; --muted:#888; --line:#333; --accent:#4fc3f7; --accent2:#1a56db;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; }
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--fg); font-size: 13px; }
+
+  /* ---- boot screen ---- */
+  #bootwrap { padding: 1.5rem; max-width: 760px; margin: 0 auto; }
+  #bootwrap h1 { font-size: 1.2rem; }
+  #status2 { background: var(--panel2); border:1px solid var(--line); border-radius:6px;
+             padding:.6rem .8rem; color:#bbb; }
+  #boot { margin-top: .8rem; font-family: ui-monospace, Consolas, monospace; font-size:12px; color:var(--muted); }
+  #boot div { padding:1px 0; white-space:pre-wrap; }
+  #boot .ok{color:#5cb85c;} #boot .err{color:#e57373;} #boot .run{color:var(--accent);}
+
+  /* ---- app shell ---- */
+  #app { display:flex; height:100vh; }
+  #left { flex:0 0 360px; display:flex; flex-direction:column; background:var(--panel);
+          border-right:1px solid var(--line); height:100vh; }
+  #right { flex:1 1 auto; display:flex; flex-direction:column; min-width:0; }
+
+  /* ---- left header ---- */
+  #lhdr { padding:.6rem .7rem; border-bottom:1px solid var(--line); }
+  #lhdr h1 { font-size:.95rem; margin:0 0 .25rem; color:#fff; }
+  #lhdr .status { font-size:11px; color:var(--muted); font-style:italic; min-height:1.2em; }
+  .btnrow { display:flex; gap:4px; margin-top:.45rem; }
+  .btnrow button { flex:0 0 auto; background:var(--section); color:var(--fg); border:1px solid var(--line);
+                   border-radius:5px; height:28px; min-width:34px; font-size:14px; cursor:pointer; }
+  .btnrow button:hover:not(:disabled) { background:#383838; }
+  .btnrow button:disabled { opacity:.4; cursor:default; }
+  .btnrow .grow { flex:1 1 auto; }
+  #runbtn { font-size:12px; font-weight:600; color:#fff; background:var(--accent2); border:none; padding:0 12px; }
+  #runbtn:disabled { background:#39477a; }
+
+  /* ---- params scroll ---- */
+  #params { overflow-y:auto; flex:1 1 auto; padding:.4rem .55rem 2rem; }
+  details { border:1px solid var(--line); border-radius:6px; margin:.45rem 0; background:var(--panel2); }
+  details > summary { cursor:pointer; list-style:none; padding:.45rem .6rem; font-weight:600;
+                      color:#ddd; background:var(--section); border-radius:6px; user-select:none; }
+  details[open] > summary { border-radius:6px 6px 0 0; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > .body { padding:.5rem .6rem .65rem; }
+  .ctl { margin:.5rem 0; }
+  .ctl > label { display:flex; justify-content:space-between; align-items:baseline; color:#c0c0c0; font-size:11.5px; }
+  .ctl > label .v { color:var(--accent); font-variant-numeric:tabular-nums; font-size:11px; }
+  .ctl input[type=range]{ width:100%; margin:.25rem 0 0; accent-color:var(--accent); }
+  .ctl input[type=number], .ctl select {
+      width:100%; background:#181818; color:var(--fg); border:1px solid var(--line);
+      border-radius:4px; padding:.2rem .35rem; font:inherit; font-size:12px; margin-top:.15rem; }
+  .pair { display:flex; gap:6px; }
+  .pair > div { flex:1; }
+  .pair .mm { font-size:10px; color:var(--muted); }
+  .two { display:flex; gap:8px; }
+  .two > .ctl { flex:1; }
+  .chk { display:flex; align-items:center; gap:.45rem; margin:.45rem 0; font-size:12px; color:#ccc; }
+  .chk input { accent-color:var(--accent); }
+  .sub { margin-left:.7rem; padding-left:.5rem; border-left:1px solid var(--line); }
+  .hint { font-size:10px; color:var(--muted); margin-top:.1rem; }
+  hr.sep { border:none; border-top:1px solid var(--line); margin:.6rem 0; }
+
+  /* ---- right: stats + tabs + plot ---- */
+  #stats { display:flex; background:var(--panel2); border-bottom:1px solid var(--line); }
+  #stats .cell { flex:1; padding:.45rem .3rem; text-align:center; border-right:1px solid var(--line); }
+  #stats .cell:last-child { border-right:none; }
+  #stats .t { color:var(--muted); font-size:9.5px; text-transform:uppercase; letter-spacing:.03em; }
+  #stats .v { font-size:18px; font-weight:700; color:#fff; line-height:1.2; }
+  #stats .v small { font-size:10px; font-weight:400; color:var(--muted); }
+
+  #tabbar { display:flex; gap:2px; padding:.4rem .5rem 0; background:var(--bg); border-bottom:1px solid var(--line); }
+  #tabbar button { background:var(--panel2); color:#bbb; border:1px solid var(--line); border-bottom:none;
+                   border-radius:6px 6px 0 0; padding:.4rem .8rem; font-size:12px; cursor:pointer; }
+  #tabbar button.active { background:#0d0d0d; color:#fff; font-weight:600; }
+
+  #plotwrap { flex:1 1 auto; position:relative; display:flex; flex-direction:column; align-items:center;
+              background:#0d0d0d; overflow:auto; padding:.4rem; }
+  #plottools { display:flex; gap:4px; align-items:center; padding:.15rem .2rem .4rem; align-self:flex-start; }
+  #plottools button { background:#222; color:#ccc; border:1px solid #333; border-radius:4px;
+                      height:26px; min-width:30px; cursor:pointer; font-size:13px; }
+  #plottools button.active { background:var(--accent2); color:#fff; border-color:var(--accent2); }
+  #plottools button:disabled { opacity:.3; cursor:default; }
+  #plottools .si { color:#9ad; font-size:11px; margin-left:8px; }
+  #plotstage { position:relative; align-self:center; line-height:0; }
+  #plot { display:block; max-width:100%; max-height:calc(100vh - 300px); }
+  #overlay { position:absolute; inset:0; width:100%; height:100%; }
+  #overlay.none { pointer-events:none; }
+  #plotstage2 { align-self:center; line-height:0; margin-top:6px; border-top:1px solid #222; padding-top:6px; }
+  #plotstage2[hidden] { display:none; }
+  #plot2 { display:block; max-width:100%; max-height:36vh; }
+  #plotwrap.loading::after { content:"running…"; position:absolute; top:10px; right:16px;
+              background:rgba(0,0,0,.6); color:#ccc; padding:.25rem .6rem; border-radius:4px; font-size:12px; z-index:5; }
+  #ploterr { color:#e57373; font-family:ui-monospace,Consolas,monospace; font-size:12px;
+             white-space:pre-wrap; padding:1rem; max-width:90%; }
+  #creditsview { align-self:stretch; overflow-y:auto; max-height:calc(100vh - 200px);
+                 padding:1rem 1.4rem 2rem; max-width:760px; margin:0 auto; line-height:1.55;
+                 color:var(--fg); text-align:left; }
+  #creditsview[hidden] { display:none; }
+  #creditsview h2 { font-size:1.05rem; color:#fff; margin:.2rem 0 .6rem; }
+  #creditsview h3 { font-size:.9rem; color:var(--accent); margin:1.2rem 0 .4rem;
+                    border-bottom:1px solid var(--line); padding-bottom:.25rem; }
+  #creditsview p { color:#c0c0c0; font-size:12.5px; margin:.5rem 0; }
+  #creditsview p.note { color:var(--muted); font-size:12px; }
+  #creditsview ul { margin:.4rem 0; padding-left:1.2rem; }
+  #creditsview li { color:#c8c8c8; font-size:12.5px; margin:.35rem 0; }
+  #creditsview ul.refs li { color:var(--muted); font-size:11.5px; margin:.2rem 0; }
+  #creditsview a { color:var(--accent); text-decoration:none; }
+  #creditsview a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+
+<!-- boot screen -->
+<div id="bootwrap">
+  <h1>White Dwarf Population Simulator</h1>
+  <div id="status2"><b>Loading the simulation engine…</b> first load downloads Pyodide + the
+    scientific stack and builds the cooling grids once (up to 90&nbsp;s). Subsequent loads are faster.</div>
+  <div id="boot"></div>
+</div>
+
+<!-- app -->
+<div id="app" hidden>
+  <div id="left">
+    <div id="lhdr">
+      <h1>White Dwarf Population Simulator</h1>
+      <div class="status" id="phase">ready</div>
+      <div class="btnrow">
+        <button id="runbtn" title="Re-run simulation">▶ Run</button>
+        <button id="defbtn" title="Restore defaults">⌂</button>
+        <span class="grow"></span>
+        <label class="chk" style="margin:0"><input type="checkbox" id="autorun" checked> auto</label>
+      </div>
+    </div>
+    <form id="params"></form>
+  </div>
+
+  <div id="right">
+    <div id="stats"></div>
+    <div id="tabbar"></div>
+    <div id="plotwrap">
+      <div id="plottools">
+        <button id="tb_home" title="Reset view (home)">⌂</button>
+        <button id="tb_zoom" data-mode="zoom" title="Box zoom">▭</button>
+        <button id="tb_pan"  data-mode="pan"  title="Pan">✥</button>
+        <button id="tb_select" data-mode="select" title="Polygon select">⬡</button>
+        <button id="tb_clear" title="Clear selection">✕</button>
+        <span class="si" id="selinfo"></span>
+      </div>
+      <div id="plotstage">
+        <img id="plot" alt="">
+        <svg id="overlay" class="none" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div id="plotstage2"><img id="plot2" alt=""></div>
+      <div id="ploterr" hidden></div>
+      <div id="creditsview" hidden>
+        <h2>WHIST — White-dwarf HR-diagram Interactive Simulation Tool</h2>
+        <p>An in-browser white-dwarf population simulator. Everything runs
+        client-side via <a href="https://pyodide.org/" target="_blank" rel="noopener">Pyodide</a>;
+        there is no backend.</p>
+
+        <p class="note">This tool is an interactive wrapper around (among other parameters) published
+        white-dwarf cooling tracks, and atmosphere models. <strong>All the science regarding the cooling of white dwarfs
+        belongs to the authors below.</strong> The bundled model grids are
+        redistributed for convenience and remain subject to their original
+        authors' terms — please cite the corresponding papers if you use this work.</p>
+
+        <h3>White Dwarf Models</h3>
+        <ul>
+          <li><strong>WD_models</strong> — HR-diagram ↔ parameter interpolation
+            framework by Sihao Cheng (IAS).
+            <a href="https://github.com/SihaoCheng/WD_models" target="_blank" rel="noopener">github.com/SihaoCheng/WD_models</a>.
+            Default model tuple: Bédard et al. (2020) cooling tracks with the
+            Montreal/Bergeron synthetic atmospheres, plus the ONe ultramassive tracks.</li>
+          <li><strong>Camisassa CO cooling tracks</strong> — La Plata LPCODE
+            sequences (Z = 0.02; DA &amp; DB): Althaus et al. (2013); Camisassa
+            et al. (2016, 2017, 2019). Atmospheres: Koester (2010).</li>
+          <li><strong>"Stealth DQ" carbon-enrichment grids</strong> — Camisassa
+            et al. (2023), <em>A hidden population of white dwarfs with atmospheric
+            carbon traces in the Gaia bifurcation</em>, A&amp;A 674, A213.</li>
+          <li><strong>STELUM distillation sequences &amp; atmospheres</strong> —
+            Montreal STELUM code: Bédard, Bergeron, Brassard &amp; Fontaine (2022).
+            Distillation: Bédard, Blouin &amp; Cheng (2024), Nature 627, 286.</li>
+          <li><strong>Gaia overlay</strong> — 120 pc Gaia white-dwarf sample:
+            Gentile Fusillo et al. (2021), MNRAS 508, 3877.</li>
+        </ul>
+
+        <h3>References</h3>
+        <ul class="refs">
+          <li>Althaus, L. G. et al. (2013), A&amp;A 557, A19.</li>
+          <li>Bédard, A. et al. (2020), ApJ 901, 93.</li>
+          <li>Bédard, A. et al. (2022), ApJ 927, 128.</li>
+          <li>Bédard, A., Blouin, S. &amp; Cheng, S. (2024), Nature 627, 286.</li>
+          <li>Bergeron, P. et al. (2011), ApJ 737, 28.</li>
+          <li>Camisassa, M. E. et al. (2016), ApJ 823, 158.</li>
+          <li>Camisassa, M. E. et al. (2017), ApJ 839, 11.</li>
+          <li>Camisassa, M. E. et al. (2019), A&amp;A 625, A87.</li>
+          <li>Camisassa, M. E. et al. (2023), A&amp;A 674, A213.
+            <a href="https://doi.org/10.1051/0004-6361/202346628" target="_blank" rel="noopener">doi:10.1051/0004-6361/202346628</a></li>
+          <li>Cheng, S., WD_models.
+            <a href="https://github.com/SihaoCheng/WD_models" target="_blank" rel="noopener">github.com/SihaoCheng/WD_models</a></li>
+          <li>Gentile Fusillo, N. P. et al. (2021), MNRAS 508, 3877.</li>
+          <li>Koester, D. (2010), MmSAI 81, 921.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+/* ====================================================================== */
+/*  Control specification — mirrors the desktop GUI's PARAM_UI_CONFIG      */
+/*  and parameter-panel grouping. Each item builds one control.           */
+/*  types: range | sci | int | select | pair | check | label             */
+/*  flags: viz=true → visualization-only (re-render, no recompute)        */
+/* ====================================================================== */
+const GROUPS = [
+  { items: [
+    { type:"pair",   id:"ms", label:"MS Mass Range [M☉]", lo:0.5, hi:8.0, min:0.4, max:15.0, step:0.1, dec:2 },
+    { type:"range",  id:"IMF_exponent", label:"IMF Exponent α", min:-2.5, max:-2.2, step:0.01, dec:2, value:-2.3 },
+    { type:"pair",   id:"ifmr", label:"IFMR  a + b·M  (a, b)", lo:0.4, hi:0.15, min:0.05, max:2.0, step:0.01, dec:3 },
+    { type:"two", children: [
+        { type:"range", id:"dwd_fraction",  label:"DWD Fraction",  min:0, max:1, step:0.001, dec:3, value:0.05 },
+        { type:"range", id:"dwd_imf_alpha", label:"DWD α (M₂∝M⁻ᵅ)", min:-5, max:5, step:0.05, dec:2, value:0.2 },
+    ]},
+    { type:"two", children: [
+        { type:"range", id:"wdsg_fraction",  label:"WD+SG Fraction",  min:0, max:1, step:0.001, dec:3, value:0.20 },
+        { type:"range", id:"wdsg_imf_alpha", label:"WD+SG α (M₂∝M⁻ᵅ)", min:-5, max:5, step:0.05, dec:2, value:0.2 },
+    ]},
+    { type:"range",  id:"type_b_fraction", label:"DB (He) Fraction", min:0, max:1, step:0.01, dec:2, value:0.30 },
+    { type:"select", id:"cooling_source", label:"Cooling Source", options:["camisassa","bedard"], value:"camisassa" },
+    { type:"check",  id:"c_enr_enabled", label:"C-Enrichment (stealth DQ)", value:true },
+    { type:"select", id:"c_enr_presc", label:"  prescription", dep:"c_enr_enabled", sub:true,
+      options:["random_0_2","minus2","minus1","c_sequence","minus3","random_0_3"], value:"random_0_2" },
+    { type:"range",  id:"c_enriched_fraction", label:"  C-Enriched Fraction (of DBs)", dep:"c_enr_enabled", sub:true,
+      min:0, max:1, step:0.05, dec:2, value:1.0 },
+  ]},
+
+  { title:"⚙  Extra Parameters", open:false, items: [
+    { type:"range", id:"distil_probability", label:"Distillation Probability", min:0, max:1, step:0.01, dec:2, value:0.07 },
+    { type:"range", id:"atm_thin_fraction", label:"Thin Atmosphere Fraction", min:0, max:1, step:0.01, dec:2, value:0.10 },
+    { type:"range", id:"ne_core_mass_threshold", label:"O/Ne Core Threshold [M☉]", min:0.5, max:2.0, step:0.01, dec:2, value:1.05 },
+    { type:"range", id:"ne_core_mass_threshold_cohe", label:"O/Ne Threshold CO+He [M☉]", min:0.5, max:2.0, step:0.01, dec:2, value:1.20 },
+    { type:"sci",   id:"wdsg_delay", label:"WD+SG Delay [yr]", value:1e7 },
+    { type:"hr" },
+    { type:"select", id:"ms_lifetime_law", label:"MS Lifetime Law", options:["powerlaw","hurley"], value:"powerlaw" },
+    { type:"check",  id:"amr_enabled", label:"Age-Metallicity Relation (AMR)", value:false },
+    { type:"number", id:"amr_z_present", label:"  AMR Z (recent burst)", dep:"amr_enabled", sub:true, min:1e-4, max:0.04, step:0.001, dec:4, value:0.02 },
+    { type:"number", id:"amr_z_floor",   label:"  AMR Z Floor (oldest)", dep:"amr_enabled", sub:true, min:1e-4, max:0.02, step:0.001, dec:4, value:1e-3 },
+    { type:"range",  id:"amr_scatter",   label:"  AMR Z Scatter [dex]", dep:"amr_enabled", sub:true, min:0, max:1, step:0.05, dec:2, value:0.0 },
+  ]},
+
+  { title:"🔢  Creation Numerics", open:false, items: [
+    { type:"sci",   id:"time_stop", label:"Simulation Time [yr]", value:1.05e10 },
+    { type:"sci",   id:"time_step", label:"Time Step [yr]", value:1e7 },
+    { type:"int",   id:"burst_N", label:"Burst N (stars/burst)", min:10, max:5000, step:10, value:200 },
+    { type:"check", id:"seed_random", label:"Random Seed", value:false },
+    { type:"int",   id:"seed", label:"  seed", dep:"!seed_random", sub:true, min:0, max:1000000000, step:1, value:42 },
+    { type:"check", id:"use_importance_sampling", label:"1/t Importance Sampling", value:false },
+    { type:"select", id:"sfr_type", label:"SFR Type", options:["exponential","constant","1_over_t"], value:"exponential" },
+    { type:"sci",   id:"sfr_tau", label:"SFR Tau / Norm. Time [yr]", value:3e9, dep:"sfr_exp" },
+    { type:"check", id:"bump_enabled", label:"Enable Gaussian Bump", value:true, dep:"sfr_exp" },
+    { type:"sci",   id:"bump_tc",    label:"  Bump Center [yr]", dep:"bump_show", sub:true, value:7e9 },
+    { type:"sci",   id:"bump_sigma", label:"  Bump Sigma [yr]",  dep:"bump_show", sub:true, value:5e8 },
+    { type:"range", id:"bump_amp",   label:"  Amplitude (frac of burst_N)", dep:"bump_show", sub:true, min:0, max:5, step:0.05, dec:2, value:0.4 },
+  ]},
+
+  { title:"📐  HR Grid Bounds", open:false, items: [
+    { type:"pairhr", id:"hr_c", label:"Color (BP−RP):  min / max", lo:-0.5, hi:2.0, min:-2, max:3, step:0.1, dec:2 },
+    { type:"sci",    id:"hr_cstep", label:"Color step", value:0.002 },
+    { type:"pairhr", id:"hr_m", label:"Magnitude (M_G):  min / max", lo:9, hi:16, min:7, max:22, step:0.5, dec:1 },
+    { type:"sci",    id:"hr_mstep", label:"Magnitude step", value:0.01 },
+  ]},
+
+  { title:"🔭  Observation & Selection", open:true, items: [
+    { type:"select", id:"selection_model", label:"Selection model",
+      options:["Absolute G cap (absG ≤ G_max)","Apparent G cap (volume-limited)"], value:"Absolute G cap (absG ≤ G_max)" },
+    { type:"range", id:"G_max", label:"G_max (limiting mag)", min:14.0, max:25.0, step:0.1, dec:1, value:15.0 },
+    { type:"check", id:"gaia_errors", label:"Gaia errors (blur HR)", value:false },
+    { type:"number", id:"volume_radius_pc", label:"  Volume radius [pc]", dep:"needs_dist", sub:true, min:10, max:1000, step:10, value:120 },
+  ]},
+
+  { title:"🎨  Visualization", open:true, items: [
+    { type:"int",   id:"bins", label:"Heatmap Resolution (bins)", min:50, max:500, step:10, value:150, viz:true },
+    { type:"check", id:"log_scale", label:"Log Scale Density", value:true, viz:true },
+    { type:"check", id:"show_contours", label:"Show Mass Contours", value:true, viz:true },
+    { type:"check", id:"show_age_contours", label:"Show Age Contours", value:false, viz:true },
+    { type:"check", id:"show_frangi_contours", label:"Show Frangi Ridge Contours", value:false, viz:true },
+  ]},
+];
+
+const TABS = [
+  { id:"hr",       label:"HR Diagram" },
+  { id:"compare",  label:"Catalog Comparison" },
+  { id:"credits",  label:"Credits" },
+];
+
+const STAT_CELLS = [
+  ["total","Total WDs"], ["selected","Selected"], ["mass","Mean Mass [M☉]"],
+  ["age","Mean Age [Gyr]"], ["binaries","Binaries"], ["mergers","Mergers"],
+];
+
+/* ---- registry of control accessors ---- */
+const reg = {};   // id -> {get(), type, viz}
+const VIZ_IDS = new Set();
+
+function fmtSci(v) {
+  const a = Math.abs(v);
+  if (a !== 0 && (a < 1e-3 || a >= 1e5)) return v.toExponential(2);
+  return String(v);
+}
+
+function buildControl(item, parent) {
+  if (item.type === "hr") { const h=document.createElement("hr"); h.className="sep"; parent.appendChild(h); return; }
+  if (item.type === "two") {
+    const row = document.createElement("div"); row.className="two";
+    item.children.forEach(c => buildControl(c, row)); parent.appendChild(row); return;
+  }
+  const wrap = document.createElement("div");
+  wrap.className = "ctl" + (item.sub ? " sub" : "");
+  wrap.dataset.cid = item.id;
+  if (item.viz) VIZ_IDS.add(item.id);
+
+  if (item.type === "check") {
+    const lab = document.createElement("label"); lab.className="chk";
+    const cb = document.createElement("input"); cb.type="checkbox"; cb.id=item.id; cb.checked=!!item.value;
+    lab.appendChild(cb); lab.appendChild(document.createTextNode(" "+item.label));
+    wrap.className = "" + (item.sub?"sub ":""); wrap.appendChild(lab);
+    reg[item.id] = { get:()=>cb.checked, type:"check", viz:item.viz };
+    parent.appendChild(wrap); return;
+  }
+
+  if (item.type === "select") {
+    const lab = document.createElement("label"); lab.textContent=item.label;
+    const sel = document.createElement("select"); sel.id=item.id;
+    item.options.forEach(o => { const op=document.createElement("option"); op.value=o; op.textContent=o; sel.appendChild(op); });
+    sel.value = item.value;
+    wrap.appendChild(lab); wrap.appendChild(sel);
+    reg[item.id] = { get:()=>sel.value, type:"select", viz:item.viz };
+    parent.appendChild(wrap); return;
+  }
+
+  if (item.type === "sci" || item.type === "number") {
+    const lab = document.createElement("label"); lab.textContent=item.label;
+    const inp = document.createElement("input"); inp.type="number"; inp.id=item.id;
+    if (item.step!==undefined) inp.step=item.step; else inp.step="any";
+    if (item.min!==undefined) inp.min=item.min; if (item.max!==undefined) inp.max=item.max;
+    inp.value = item.value;
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    reg[item.id] = { get:()=>parseFloat(inp.value), type:"num", viz:item.viz };
+    parent.appendChild(wrap); return;
+  }
+
+  if (item.type === "int" || item.type === "range") {
+    const lab = document.createElement("label");
+    const span = document.createElement("span"); span.textContent=item.label;
+    const v = document.createElement("span"); v.className="v";
+    lab.appendChild(span); lab.appendChild(v);
+    const inp = document.createElement("input"); inp.type="range"; inp.id=item.id;
+    inp.min=item.min; inp.max=item.max; inp.step=item.step; inp.value=item.value;
+    const dec = item.dec ?? 0;
+    const show = () => v.textContent = (item.type==="int") ? inp.value : parseFloat(inp.value).toFixed(dec);
+    inp.addEventListener("input", show); show();
+    wrap.appendChild(lab); wrap.appendChild(inp);
+    reg[item.id] = { get:()=> (item.type==="int") ? Math.round(parseFloat(inp.value)) : parseFloat(inp.value), type:"num", viz:item.viz };
+    parent.appendChild(wrap); return;
+  }
+
+  if (item.type === "pair" || item.type === "pairhr") {
+    const lab = document.createElement("label"); lab.textContent=item.label;
+    const row = document.createElement("div"); row.className="pair";
+    const mk = (suffix, val) => {
+      const d = document.createElement("div");
+      const inp = document.createElement("input"); inp.type="number"; inp.id=item.id+"_"+suffix;
+      inp.step=item.step; inp.min=item.min; inp.max=item.max; inp.value=val;
+      const t = document.createElement("div"); t.className="mm"; t.textContent = suffix==="lo"?"min":"max";
+      d.appendChild(t); d.appendChild(inp); row.appendChild(d);
+      return inp;
+    };
+    const loI = mk("lo", item.lo), hiI = mk("hi", item.hi);
+    wrap.appendChild(lab); wrap.appendChild(row);
+    reg[item.id+"_lo"] = { get:()=>parseFloat(loI.value), type:"num" };
+    reg[item.id+"_hi"] = { get:()=>parseFloat(hiI.value), type:"num" };
+    parent.appendChild(wrap); return;
+  }
+}
+
+function buildPanel() {
+  const root = $("params");
+  GROUPS.forEach(g => {
+    if (!g.title) { const box=document.createElement("div"); g.items.forEach(it=>buildControl(it, box)); root.appendChild(box); return; }
+    const det = document.createElement("details"); if (g.open) det.open=true;
+    const sum = document.createElement("summary"); sum.textContent=g.title; det.appendChild(sum);
+    const body = document.createElement("div"); body.className="body";
+    g.items.forEach(it => buildControl(it, body));
+    det.appendChild(body); root.appendChild(det);
+  });
+  // stats + tabs
+  const sb = $("stats");
+  STAT_CELLS.forEach(([k,t]) => {
+    const c=document.createElement("div"); c.className="cell";
+    c.innerHTML = `<div class="t">${t}</div><div class="v" id="stat_${k}">—</div>`; sb.appendChild(c);
+  });
+  const tb = $("tabbar");
+  TABS.forEach((t,i) => {
+    const b=document.createElement("button"); b.textContent=t.label; b.dataset.tab=t.id;
+    if (i===0) b.classList.add("active");
+    b.addEventListener("click", ()=>{ activeTab=t.id; polyVerts=[];
+      document.querySelectorAll("#tabbar button").forEach(x=>x.classList.toggle("active", x.dataset.tab===t.id));
+      applyTabChrome(t.id);
+      if (t.id === "credits") { setPhase("credits"); return; }
+      runFrame(false); });
+    tb.appendChild(b);
+  });
+}
+
+/* ---- swap plot chrome <-> static credits view ---- */
+function applyTabChrome(id) {
+  const isCredits = id === "credits";
+  if (isCredits) setMode(null);
+  $("creditsview").hidden = !isCredits;
+  $("plottools").style.display = isCredits ? "none" : "";
+  $("plotstage").style.display = isCredits ? "none" : "";
+  if (isCredits) { $("plotstage2").hidden = true; $("ploterr").hidden = true; }
+}
+
+/* ---- dependency visibility (sub-controls enabled/shown by their parent) ---- */
+function depVisible(dep) {
+  if (!dep) return true;
+  if (dep === "sfr_exp")  return ["exponential","1_over_t"].includes(reg.sfr_type.get());
+  if (dep === "bump_show") return reg.bump_enabled.get() && ["exponential","1_over_t"].includes(reg.sfr_type.get());
+  if (dep === "needs_dist") return reg.gaia_errors.get() || reg.selection_model.get().startsWith("Apparent");
+  if (dep.startsWith("!")) return !reg[dep.slice(1)].get();
+  return !!reg[dep].get();
+}
+function applyDeps() {
+  document.querySelectorAll("[data-cid]").forEach(el => {
+    const item = findItem(el.dataset.cid);
+    if (item && item.dep !== undefined) el.style.display = depVisible(item.dep) ? "" : "none";
+  });
+}
+function findItem(id) {
+  for (const g of GROUPS) for (const it of g.items) {
+    if (it.id===id) return it;
+    if (it.children) for (const c of it.children) if (c.id===id) return c;
+  }
+  return null;
+}
+
+/* ====================================================================== */
+/*  Collect UI -> params object (sent to Python compute)                  */
+/* ====================================================================== */
+function collectParams() {
+  const g = (id) => reg[id].get();
+  return {
+    ms_lo:g("ms_lo"), ms_hi:g("ms_hi"),
+    IMF_exponent:g("IMF_exponent"),
+    ifmr_a:g("ifmr_lo"), ifmr_b:g("ifmr_hi"),
+    dwd_fraction:g("dwd_fraction"), dwd_imf_alpha:g("dwd_imf_alpha"),
+    wdsg_fraction:g("wdsg_fraction"), wdsg_imf_alpha:g("wdsg_imf_alpha"),
+    type_b_fraction:g("type_b_fraction"),
+    cooling_source:g("cooling_source"),
+    c_enr_enabled:g("c_enr_enabled"), c_enr_presc:g("c_enr_presc"), c_enriched_fraction:g("c_enriched_fraction"),
+    distil_probability:g("distil_probability"), atm_thin_fraction:g("atm_thin_fraction"),
+    ne_core_mass_threshold:g("ne_core_mass_threshold"), ne_core_mass_threshold_cohe:g("ne_core_mass_threshold_cohe"),
+    wdsg_delay:g("wdsg_delay"),
+    ms_lifetime_law:g("ms_lifetime_law"),
+    amr_enabled:g("amr_enabled"), amr_z_present:g("amr_z_present"), amr_z_floor:g("amr_z_floor"), amr_scatter:g("amr_scatter"),
+    time_stop:g("time_stop"), time_step:g("time_step"), burst_N:g("burst_N"),
+    seed_random:g("seed_random"), seed:g("seed"),
+    use_importance_sampling:g("use_importance_sampling"),
+    sfr_type:g("sfr_type"), sfr_tau:g("sfr_tau"),
+    bump_enabled:g("bump_enabled"), bump_tc:g("bump_tc"), bump_sigma:g("bump_sigma"), bump_amp:g("bump_amp"),
+    hr_cmin:g("hr_c_lo"), hr_cmax:g("hr_c_hi"), hr_cstep:g("hr_cstep"),
+    hr_mmin:g("hr_m_lo"), hr_mmax:g("hr_m_hi"), hr_mstep:g("hr_mstep"),
+    G_max:g("G_max"),
+    selection_model:g("selection_model"), gaia_errors:g("gaia_errors"), volume_radius_pc:g("volume_radius_pc"),
+  };
+}
+function collectViz() {
+  return { bins:reg.bins.get(), log_scale:reg.log_scale.get(),
+           show_contours:reg.show_contours.get(), show_age_contours:reg.show_age_contours.get(),
+           show_frangi_contours:reg.show_frangi_contours.get() };
+}
+
+/* ====================================================================== */
+/*  Run lifecycle                                                          */
+/* ====================================================================== */
+let pyodide=null, ready=false, busy=false, queued=null, activeTab="hr";
+const setPhase = (m) => $("phase").textContent = m;
+
+/* interaction state */
+const views = { hr:null, compare:null };     // {xlim:[l,r], ylim:[b,t]} per zoomable tab
+let selection = null;                        // polygon vertices in data coords, or null
+let AXES = null;                             // {fig_w,fig_h,xlim,ylim,panels:[[l,t,r,b],...]}
+let mode = null;                             // "zoom" | "pan" | "select" | null
+let polyVerts = [];                          // in-progress polygon (data coords)
+const SVGNS = "http://www.w3.org/2000/svg";
+const TOOL_TABS = { zoom:["hr","compare"], pan:["hr","compare"], select:["hr","compare"] };
+
+async function compute() {
+  pyodide.globals.set("PARAMS_JSON", JSON.stringify(collectParams()));
+  const out = JSON.parse(await pyodide.runPythonAsync(COMPUTE_PY));
+  // stats
+  const s = out.stats;
+  $("stat_total").innerHTML    = s.total.toLocaleString();
+  $("stat_selected").innerHTML = s.selected.toLocaleString();
+  $("stat_mass").innerHTML     = s.mass==null ? "—" : s.mass.toFixed(3);
+  $("stat_age").innerHTML      = s.age==null ? "—" : s.age.toFixed(2);
+  $("stat_binaries").innerHTML = s.binaries==null ? "—" :
+      `${s.binaries.toLocaleString()}<br><small>DWD ${s.bin_dwd.toLocaleString()} · WD+SG ${s.bin_wsg.toLocaleString()}</small>`;
+  $("stat_mergers").innerHTML  = s.mergers==null ? "—" :
+      `${s.mergers.toLocaleString()}<br><small>DWD ${s.mrg_dwd.toLocaleString()} · WD+SG ${s.mrg_wsg.toLocaleString()}</small>`;
+  return out;
+}
+
+async function renderTab() {
+  if (!ready || activeTab === "credits") return;
+  $("plotwrap").classList.add("loading");
+  try {
+    pyodide.globals.set("VIZ_JSON", JSON.stringify(collectViz()));
+    pyodide.globals.set("TAB", activeTab);
+    pyodide.globals.set("VIEW_JSON", views[activeTab] ? JSON.stringify(views[activeTab]) : "");
+    const sendSel = selection && (activeTab === "hr" || activeTab === "compare");
+    pyodide.globals.set("SELECTION_JSON", sendSel ? JSON.stringify(selection) : "");
+    const out = JSON.parse(await pyodide.runPythonAsync(RENDER_PY));
+    $("plot").src = "data:image/png;base64," + out.png;
+    $("plot").hidden = false; $("ploterr").hidden = true;
+    if (out.png2) { $("plot2").src = "data:image/png;base64," + out.png2; $("plotstage2").hidden = false; }
+    else $("plotstage2").hidden = true;
+    AXES = out.axes || null;
+    syncTools(out);
+    drawOverlay();
+  } catch (e) {
+    $("plot").hidden = true; $("ploterr").hidden = false;
+    $("ploterr").textContent = (e && e.message) ? e.message : String(e);
+    console.error(e);
+  } finally { $("plotwrap").classList.remove("loading"); }
+}
+
+/* ---- interaction: coordinate mapping ---- */
+function evToFig(e) {                         // screen px -> figure px (svg user units)
+  const svg = $("overlay");
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+  return [p.x, p.y];
+}
+function panelAt(fx, fy) {                     // pick the panel box containing (fx,fy)
+  const a = AXES; if (!a) return null;
+  for (const p of a.panels) if (fx>=p[0] && fx<=p[2] && fy>=p[1] && fy<=p[3]) return p;
+  return a.panels[0];                          // default to first (panels share xlim/ylim)
+}
+function figToData([fx, fy]) {
+  const a = AXES; if (!a) return null;
+  const [x0,y0,x1,y1] = panelAt(fx, fy);       // left,top,right,bottom (fig px)
+  const u = (fx - x0) / (x1 - x0);
+  const v = (fy - y0) / (y1 - y0);             // 0 at top, 1 at bottom
+  const x = a.xlim[0] + u * (a.xlim[1] - a.xlim[0]);
+  const y = a.ylim[1] + v * (a.ylim[0] - a.ylim[1]);   // ylim=[bottom,top]
+  return [x, y];
+}
+function dataToFigP([x, y], p) {                // map a data point into a given panel box
+  const a = AXES;
+  const [x0,y0,x1,y1] = p;
+  const u = (x - a.xlim[0]) / (a.xlim[1] - a.xlim[0]);
+  const v = (y - a.ylim[1]) / (a.ylim[0] - a.ylim[1]);
+  return [x0 + u * (x1 - x0), y0 + v * (y1 - y0)];
+}
+function dataToFig(pt) { return AXES ? dataToFigP(pt, AXES.panels[0]) : null; }
+
+/* ---- overlay drawing (selection polygon, live + committed) ---- */
+function drawOverlay() {
+  const svg = $("overlay");
+  if (AXES) svg.setAttribute("viewBox", `0 0 ${AXES.fig_w} ${AXES.fig_h}`);
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  // The committed selection is drawn into the PNG by Python (on every panel).
+  // Here we only preview the in-progress polygon, replicated across all panels.
+  if (mode === "select" && polyVerts.length && AXES) {
+    for (const panel of AXES.panels) {
+      const pts = polyVerts.map(pt => dataToFigP(pt, panel));
+      addPoly(svg, pts, "#7CFC00", false);
+      pts.forEach(p => addDot(svg, p, "#7CFC00"));
+    }
+  }
+}
+function addPoly(svg, ptsFig, color, closed) {
+  const el = document.createElementNS(SVGNS, closed ? "polygon" : "polyline");
+  el.setAttribute("points", ptsFig.map(p => p.join(",")).join(" "));
+  el.setAttribute("fill", closed ? "rgba(124,252,0,0.08)" : "none");
+  el.setAttribute("stroke", color); el.setAttribute("stroke-width", "2");
+  el.setAttribute("stroke-dasharray", "6 4"); el.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.appendChild(el);
+}
+function addDot(svg, p, color) {
+  const c = document.createElementNS(SVGNS, "circle");
+  c.setAttribute("cx", p[0]); c.setAttribute("cy", p[1]); c.setAttribute("r", "4");
+  c.setAttribute("fill", color); svg.appendChild(c);
+}
+
+/* ---- tool availability + selection readout ---- */
+function syncTools(out) {
+  ["zoom","pan","select"].forEach(m => {
+    const ok = TOOL_TABS[m].includes(activeTab) && AXES;
+    $("tb_"+m).disabled = !ok;
+    if (!ok && mode === m) setMode(null);
+  });
+  $("tb_home").disabled = !(AXES && views[activeTab] != null);
+  $("tb_clear").disabled = !selection;
+  const si = $("selinfo");
+  if (selection && out && out.sel_count != null) {
+    si.textContent = (activeTab === "compare" && out.sel_cat != null)
+      ? `sel: ${out.sel_count.toLocaleString()} sim · ${out.sel_cat.toLocaleString()} cat`
+      : `selection: ${out.sel_count.toLocaleString()} WDs`;
+  } else si.textContent = "";
+}
+function setMode(m) {
+  mode = (mode === m) ? null : m;
+  ["zoom","pan","select"].forEach(x => $("tb_"+x).classList.toggle("active", mode===x));
+  const svg = $("overlay");
+  svg.classList.toggle("none", mode === null);
+  svg.style.cursor = mode === "pan" ? "grab" : mode ? "crosshair" : "default";
+  if (mode !== "select") { polyVerts = []; }
+  drawOverlay();
+}
+
+function currentView() {                      // pending view, or full extent from AXES
+  if (views[activeTab]) return views[activeTab];
+  return { xlim:[AXES.xlim[0], AXES.xlim[1]], ylim:[AXES.ylim[0], AXES.ylim[1]] };
+}
+function addVertex(e) {
+  const c = figToData(evToFig(e)); if (!c) return;
+  if (polyVerts.length >= 3) {                // click near first vertex closes
+    const f0 = dataToFig(polyVerts[0]), f = evToFig(e);
+    if (Math.hypot(f[0]-f0[0], f[1]-f0[1]) < 12) { closePolygon(); return; }
+  }
+  polyVerts.push(c); drawOverlay();
+}
+function closePolygon() {
+  if (polyVerts.length < 3) return;
+  selection = [...polyVerts]; polyVerts = []; setMode(null); runFrame(false);
+}
+let wheelT = null;
+function wireOverlay() {
+  const svg = $("overlay");
+  let drag = null;
+  svg.addEventListener("mousedown", (e) => {
+    if (!AXES || !mode) return;
+    if (mode === "select") { if (e.button === 0) addVertex(e); return; }
+    e.preventDefault();
+    const f = evToFig(e);
+    drag = { mode, startFig:f };
+    if (mode === "zoom") {
+      const r = document.createElementNS(SVGNS, "rect");
+      r.setAttribute("fill","rgba(79,195,247,0.15)"); r.setAttribute("stroke","#4fc3f7");
+      r.setAttribute("stroke-width","1.5"); r.setAttribute("vector-effect","non-scaling-stroke");
+      svg.appendChild(r); drag.rectEl = r;
+    } else if (mode === "pan") { svg.style.cursor = "grabbing"; drag.startView = currentView(); }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  });
+  function onMove(e) {
+    if (!drag) return;
+    const f = evToFig(e);
+    if (drag.mode === "zoom" && drag.rectEl) {
+      const [x0,y0] = drag.startFig;
+      drag.rectEl.setAttribute("x", Math.min(x0,f[0])); drag.rectEl.setAttribute("y", Math.min(y0,f[1]));
+      drag.rectEl.setAttribute("width", Math.abs(f[0]-x0)); drag.rectEl.setAttribute("height", Math.abs(f[1]-y0));
+    }
+  }
+  function onUp(e) {
+    window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp);
+    const f = evToFig(e), d = drag; drag = null;
+    svg.style.cursor = mode === "pan" ? "grab" : "crosshair";
+    if (d.mode === "zoom") {
+      if (d.rectEl) d.rectEl.remove();
+      if (Math.hypot(f[0]-d.startFig[0], f[1]-d.startFig[1]) < 5) return;   // ignore tiny drag
+      const a = figToData(d.startFig), b = figToData(f);
+      views[activeTab] = { xlim:[Math.min(a[0],b[0]), Math.max(a[0],b[0])],
+                           ylim:[Math.max(a[1],b[1]), Math.min(a[1],b[1])] };  // [bottom,top]
+      runFrame(false);
+    } else if (d.mode === "pan") {
+      const a = figToData(d.startFig), b = figToData(f);
+      const dx = a[0]-b[0], dy = a[1]-b[1], v = d.startView;
+      views[activeTab] = { xlim:[v.xlim[0]+dx, v.xlim[1]+dx], ylim:[v.ylim[0]+dy, v.ylim[1]+dy] };
+      runFrame(false);
+    }
+  }
+  $("plotstage").addEventListener("wheel", (e) => {
+    if (!AXES || !TOOL_TABS.zoom.includes(activeTab)) return;
+    e.preventDefault();
+    const c = figToData(evToFig(e)), v = currentView();
+    const k = e.deltaY < 0 ? 0.8 : 1.25;
+    views[activeTab] = { xlim:[c[0]+(v.xlim[0]-c[0])*k, c[0]+(v.xlim[1]-c[0])*k],
+                         ylim:[c[1]+(v.ylim[0]-c[1])*k, c[1]+(v.ylim[1]-c[1])*k] };
+    clearTimeout(wheelT); wheelT = setTimeout(() => runFrame(false), 130);
+  }, { passive:false });
+  svg.addEventListener("dblclick", () => { if (mode === "select") closePolygon(); });
+  svg.addEventListener("contextmenu", (e) => { if (mode === "select") { e.preventDefault(); polyVerts = []; drawOverlay(); } });
+}
+
+async function runFrame(recompute=true) {
+  if (!ready) return;
+  if (busy) { queued = recompute; return; }
+  busy = true; $("runbtn").disabled = true; setPhase(recompute ? "running…" : "rendering…");
+  $("plotwrap").classList.add("loading");
+  try {
+    const t0 = performance.now();
+    let cms = null;
+    if (recompute) { const out = await compute(); cms = out.compute_ms; }
+    await renderTab();
+    setPhase(recompute ? `done — compute ${cms} ms, total ${Math.round(performance.now()-t0)} ms`
+                       : `rendered (${Math.round(performance.now()-t0)} ms)`);
+  } catch (e) {
+    setPhase("error"); $("plot").hidden=true; $("ploterr").hidden=false;
+    $("ploterr").textContent = (e && e.message) ? e.message : String(e); console.error(e);
+  } finally {
+    busy=false; $("runbtn").disabled=false; $("plotwrap").classList.remove("loading");
+    if (queued !== null) { const r=queued; queued=null; runFrame(r); }
+  }
+}
+
+let debounceT=null;
+function onInput(e) {
+  applyDeps();
+  if (!reg.autorun_) {} // noop
+  const id = e.target.id;
+  const isViz = id && VIZ_IDS.has(id);
+  if (!$("autorun").checked) return;
+  clearTimeout(debounceT);
+  debounceT = setTimeout(()=>runFrame(!isViz), 250);
+}
+
+function restoreDefaults() {
+  // rebuild from spec defaults
+  const reapply = (item) => {
+    if (!item.id) return;
+    if (item.type==="check") $(item.id).checked = !!item.value;
+    else if (item.type==="select") $(item.id).value = item.value;
+    else if (item.type==="pair"||item.type==="pairhr") { $(item.id+"_lo").value=item.lo; $(item.id+"_hi").value=item.hi; }
+    else if ($(item.id)) { $(item.id).value = item.value; $(item.id).dispatchEvent(new Event("input")); }
+  };
+  GROUPS.forEach(g=>g.items.forEach(it=>{ reapply(it); if(it.children) it.children.forEach(reapply); }));
+  applyDeps(); runFrame(true);
+}
+
+/* ====================================================================== */
+/*  Python                                                                 */
+/* ====================================================================== */
+const SETUP_PY = `
+import sys
+sys.path.insert(0, "/whist_pkg/sim_core")
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+plt.rcParams.update({
+    "figure.facecolor": "#1a1a1a", "axes.facecolor": "#0d0d0d",
+    "axes.edgecolor": "white", "text.color": "white", "axes.labelcolor": "white",
+    "xtick.color": "white", "ytick.color": "white",
+    "savefig.facecolor": "#1a1a1a",
+})
+import numpy as np, json, io, base64
+from simulate_wd_full_population import DefaultParameters, create_population, extract_observables
+from selection_models import AbsoluteMagCap, ApparentMagCap
+from error_models import PrecomputedGaiaErrorModel
+import WD_models_loader_wrapper
+import web_plots
+
+# Pre-built Gaia error model (loads tiny offline-exported sigma tables, no FITS).
+ERR_MODEL = PrecomputedGaiaErrorModel("/whist_pkg/catalog/gaia_error_tables.npz")
+
+_p0 = dict(DefaultParameters.defaults)
+loader = WD_models_loader_wrapper.WDModelsLoader(
+    HR_grid=_p0["HR_grid"], HR_bands=_p0["HR_bands"],
+    lazy=True, interp_method="grid", grid_res=(300, 800))
+
+_ov = np.load("/whist_pkg/catalog/gaia_hr_overlay.npy")
+CATALOG = {"bp_rp": _ov[:, 0].astype(float), "absG": _ov[:, 1].astype(float)}
+
+try:
+    BASE_MODEL = loader.get_hr_contour_model(('be', 'be', 'o', 'H'))
+except Exception:
+    BASE_MODEL = None
+
+# Frangi ridge map of the catalog (computed once; used as an HR overlay).
+FRANGI = web_plots._compute_catalog_frangi(CATALOG, _p0["HR_grid"])
+
+# module-level run state, filled by compute()
+STATE = {"df": None, "hr_grid": _p0["HR_grid"]}
+`;
+
+const COMPUTE_PY = `
+import time as _t
+ui = json.loads(PARAMS_JSON)
+p = dict(DefaultParameters.defaults)
+p["ms_mass_range"]   = [float(ui["ms_lo"]), float(ui["ms_hi"])]
+p["IMF_exponent"]    = float(ui["IMF_exponent"])
+p["IFMR_parameters"] = [float(ui["ifmr_a"]), float(ui["ifmr_b"])]
+for k in ("dwd_fraction","dwd_imf_alpha","wdsg_fraction","wdsg_imf_alpha","type_b_fraction",
+          "distil_probability","atm_thin_fraction","ne_core_mass_threshold",
+          "ne_core_mass_threshold_cohe","wdsg_delay","c_enriched_fraction",
+          "time_stop","time_step","sfr_tau","G_max","amr_z_present","amr_z_floor","amr_scatter"):
+    p[k] = float(ui[k])
+p["cooling_source"]  = ui["cooling_source"]
+p["sfr_type"]        = ui["sfr_type"]
+p["ms_lifetime_law"] = ui["ms_lifetime_law"]
+p["burst_N"]         = int(ui["burst_N"])
+p["use_importance_sampling"] = bool(ui["use_importance_sampling"])
+p["c_enrichment_prescription"] = ui["c_enr_presc"] if ui["c_enr_enabled"] else None
+p["seed"] = None if ui["seed_random"] else int(ui["seed"])
+p["use_amr"] = bool(ui["amr_enabled"])
+if p["use_amr"]:
+    p["ms_lifetime_law"] = "hurley"
+if ui["bump_enabled"] and ui["sfr_type"] in ("exponential", "1_over_t"):
+    p["extra_bump"] = {"t_center": float(ui["bump_tc"]), "sigma": float(ui["bump_sigma"]),
+                       "amp_fraction": float(ui["bump_amp"])}
+else:
+    p.pop("extra_bump", None)
+p["HR_grid"] = (float(ui["hr_cmin"]), float(ui["hr_cmax"]), float(ui["hr_cstep"]),
+                float(ui["hr_mmin"]), float(ui["hr_mmax"]), float(ui["hr_mstep"]))
+p["G_max"] = float(ui["G_max"])
+
+# selection model (apparent = volume-limited, needs per-star distances)
+p["volume_radius_pc"] = float(ui["volume_radius_pc"])
+p["selection_model"] = (ApparentMagCap() if str(ui["selection_model"]).startswith("Apparent")
+                        else AbsoluteMagCap())
+# Gaia observational errors (data-driven sigma from pre-exported tables)
+gaia_on = bool(ui["gaia_errors"])
+p["error_model"] = ERR_MODEL if gaia_on else None
+
+_t0 = _t.time()
+all_data = create_population(p, show_times=False)
+all_data, mask = extract_observables(all_data, p, loader=loader,
+                                     show_timings=False, use_direct_approach=True)
+compute_ms = round((_t.time() - _t0) * 1000, 1)
+
+sel = np.asarray(mask) & (all_data["Valid"].values == 1)
+display_df = all_data[sel].copy()
+# When Gaia errors are on, all plots read df["G"]/df["bprp"]; point them at the
+# blurred observed columns so the whole UI shows the noisy HR (mirrors the GUI).
+if gaia_on and "absG_obs" in display_df.columns and len(display_df) > 0:
+    d = display_df
+    d = d[np.isfinite(d["absG_obs"].values) & np.isfinite(d["bprp_obs"].values)].copy()
+    d["G"] = d["absG_obs"].values
+    d["bprp"] = d["bprp_obs"].values
+    display_df = d
+use_is = p["use_importance_sampling"]
+w = display_df["weight"].values if ("weight" in display_df.columns and use_is) else None
+
+STATE["df"] = display_df
+STATE["hr_grid"] = p["HR_grid"]
+
+def _mean(col):
+    if len(display_df) == 0: return None
+    v = display_df[col].values
+    return float(np.average(v, weights=w)) if w is not None else float(v.mean())
+
+stats = {"total": int(len(all_data)), "selected": int(len(display_df)),
+         "mass": _mean("Mass"), "age": _mean("true_age"),
+         "binaries": None, "mergers": None,
+         "bin_dwd":0,"bin_wsg":0,"mrg_dwd":0,"mrg_wsg":0}
+if "merger_channel" in all_data.columns:
+    ch = all_data["merger_channel"].values
+    bd = int(((ch==1)|(ch==3)).sum()); bw = int(((ch==2)|(ch==4)).sum())
+    md = int((ch==1).sum());           mw = int((ch==2).sum())
+    stats.update(binaries=bd+bw, bin_dwd=bd, bin_wsg=bw, mergers=md+mw, mrg_dwd=md, mrg_wsg=mw)
+
+json.dumps({"compute_ms": compute_ms, "stats": stats})
+`;
+
+const RENDER_PY = `
+import matplotlib.patches as _mpatches
+from matplotlib.path import Path as _MplPath
+viz = json.loads(VIZ_JSON)
+view = json.loads(VIEW_JSON) if VIEW_JSON else None        # {xlim:[l,r], ylim:[b,t]} or None
+selection = json.loads(SELECTION_JSON) if SELECTION_JSON else None   # [[x,y],...] or None
+df = STATE["df"]; hr_grid = STATE["hr_grid"]; tab = TAB
+bins = int(viz["bins"])
+
+def _inside(d, poly):
+    pts = np.column_stack([d["bprp"].values, d["G"].values])
+    return _MplPath(np.asarray(poly)).contains_points(pts)
+
+def _panels_payload(fig, axlist):
+    fw = float(fig.get_size_inches()[0] * fig.dpi)
+    fh = float(fig.get_size_inches()[1] * fig.dpi)
+    panels = []
+    for ax in axlist:
+        pos = ax.get_position()
+        panels.append([pos.x0 * fw, (1.0 - pos.y1) * fh, pos.x1 * fw, (1.0 - pos.y0) * fh])
+    xl = axlist[0].get_xlim(); yl = axlist[0].get_ylim()
+    return {"fig_w": fw, "fig_h": fh, "panels": panels,
+            "xlim": [float(xl[0]), float(xl[1])], "ylim": [float(yl[0]), float(yl[1])]}
+
+def _to_png(fig):
+    b = io.BytesIO(); fig.savefig(b, format="png"); plt.close(fig)
+    return base64.b64encode(b.getvalue()).decode("ascii")
+
+axes = None; png2 = None
+if df is None or len(df) == 0:
+    fig = plt.figure(figsize=(6, 4), dpi=110)
+    ax = fig.add_subplot(111); ax.axis("off")
+    ax.text(0.5, 0.5, "No selected white dwarfs for these parameters",
+            ha="center", va="center", color="white")
+    png = _to_png(fig)
+elif tab == "hr":
+    # primary: HR density heatmap (zoom / pan / polygon target)
+    fig = plt.figure(figsize=(6.6, 5.8), dpi=110)
+    ax = web_plots.draw_hr_heatmap(fig, df, bins, viz["log_scale"], viz["show_contours"],
+                                   viz["show_age_contours"], BASE_MODEL, hr_grid,
+                                   FRANGI if viz["show_frangi_contours"] else None)
+    if selection:
+        ax.add_patch(_mpatches.Polygon(selection, closed=True, lw=2, edgecolor="lime",
+                                       facecolor="none", linestyle="--", zorder=6))
+    if view:
+        ax.set_xlim(view["xlim"]); ax.set_ylim(view["ylim"])
+    axes = _panels_payload(fig, [ax])
+    png = _to_png(fig)
+    # secondary: distributions, filtered to the HR polygon selection if active
+    ddf = df[_inside(df, selection)] if selection else df
+    fig2 = plt.figure(figsize=(9.5, 2.9), dpi=110)
+    web_plots.draw_distributions(fig2, ddf)
+    png2 = _to_png(fig2)
+else:  # compare: sim|catalog density (synced) + residual below
+    fig = plt.figure(figsize=(10.0, 5.0), dpi=110)
+    ax_sim, ax_cat = web_plots.draw_density_comparison(fig, df, CATALOG, bins, viz["log_scale"], hr_grid)
+    if selection:                              # draw the region on BOTH panels
+        for _ax in (ax_sim, ax_cat):
+            _ax.add_patch(_mpatches.Polygon(selection, closed=True, lw=2, edgecolor="lime",
+                                            facecolor="none", linestyle="--", zorder=6))
+    if view:
+        ax_sim.set_xlim(view["xlim"]); ax_sim.set_ylim(view["ylim"])   # sharex/sharey -> both
+    axes = _panels_payload(fig, [ax_sim, ax_cat])
+    png = _to_png(fig)
+    fig2 = plt.figure(figsize=(7.0, 5.0), dpi=110)
+    ax_r = web_plots.draw_residual_map(fig2, df, CATALOG, bins, hr_grid)
+    if selection:
+        ax_r.add_patch(_mpatches.Polygon(selection, closed=True, lw=2, edgecolor="lime",
+                                         facecolor="none", linestyle="--", zorder=6))
+    if view:
+        ax_r.set_xlim(view["xlim"]); ax_r.set_ylim(view["ylim"])
+    png2 = _to_png(fig2)
+
+out = {"png": png, "png2": png2, "axes": axes}
+if selection and df is not None and len(df) > 0:
+    out["sel_count"] = int(_inside(df, selection).sum())
+    if tab == "compare":                       # catalog stars inside the same region
+        cat_pts = np.column_stack([CATALOG["bp_rp"], CATALOG["absG"]])
+        out["sel_cat"] = int(_MplPath(np.asarray(selection)).contains_points(cat_pts).sum())
+json.dumps(out)
+`;
+
+/* ====================================================================== */
+/*  Boot                                                                   */
+/* ====================================================================== */
+const bootEl = $("boot");
+const boot = (m,c) => { const d=document.createElement("div"); if(c)d.className=c;
+  d.textContent=(c==="run"?"… ":c==="ok"?"✓ ":"")+m; bootEl.appendChild(d); };
+const secs = (ms)=>(ms/1000).toFixed(1)+"s";
+
+async function main() {
+  try {
+    boot("Loading Pyodide runtime…","run");
+    pyodide = await loadPyodide();
+    boot("Pyodide loaded.","ok");
+
+    boot("Loading numpy, scipy, pandas, astropy, matplotlib, scikit-image…","run");
+    let tp = performance.now();
+    await pyodide.loadPackage(["numpy","scipy","pandas","astropy","matplotlib","scikit-image"]);
+    boot("Packages loaded ("+secs(performance.now()-tp)+").","ok");
+
+    boot("Fetching simulation bundle…","run");
+    tp = performance.now();
+    const resp = await fetch("whist_bundle.zip");
+    if (!resp.ok) throw new Error("could not fetch whist_bundle.zip (HTTP "+resp.status+"). Serve over http:// (python serve.py).");
+    const buf = await resp.arrayBuffer();
+    boot("Bundle fetched: "+(buf.byteLength/1e6).toFixed(1)+" MB ("+secs(performance.now()-tp)+").","ok");
+    pyodide.FS.mkdirTree("/whist_pkg");
+    pyodide.unpackArchive(buf, "zip", { extractDir:"/whist_pkg" });
+    boot("Bundle unpacked.","ok");
+
+    boot("Building cooling grids + catalog ridge map (one-time)…","run");
+    tp = performance.now();
+    await pyodide.runPythonAsync(SETUP_PY);
+    boot("Engine ready ("+secs(performance.now()-tp)+").","ok");
+
+    buildPanel(); applyDeps();
+    ready = true;
+    $("bootwrap").hidden = true; $("app").hidden = false;
+
+    $("params").addEventListener("input", onInput);
+    $("runbtn").addEventListener("click", ()=>runFrame(true));
+    $("defbtn").addEventListener("click", restoreDefaults);
+
+    ["zoom","pan","select"].forEach(m => $("tb_"+m).addEventListener("click", ()=>setMode(m)));
+    $("tb_home").addEventListener("click", ()=>{ views[activeTab]=null; runFrame(false); });
+    $("tb_clear").addEventListener("click", ()=>{ selection=null; polyVerts=[]; runFrame(false); });
+    wireOverlay();
+
+    setPhase("ready — running default frame…");
+    await runFrame(true);
+  } catch (e) {
+    $("status2").textContent = "Failed to start.";
+    boot("ERROR: "+(e&&e.message?e.message:String(e)),"err");
+    if (e && e.stack) boot(e.stack,"err");
+    console.error(e);
+  }
+}
+main();
+</script>
+</body>
+</html>
